@@ -5,9 +5,9 @@ max_gap_range = 2:2:32;                          % Maximum gap duration (seconds
 
 % Specify design
 design = struct();
-design.nrep          = 20; % number of random trial orders per design
-design.seed          = 1; % seed for random number generator
-design.nbf           = 1; % number of haemodynamic basis functions
+design.nrep          = 20;    % number of random trial orders per design
+design.seed          = 1;     % seed for random number generator
+design.nbf           = 1;     % number of haemodynamic basis functions
 design.maxtime       = 10*60; % 10 mins in seconds
 design.durations_on  = on_durations;
 design.max_gap_range = max_gap_range;
@@ -21,7 +21,9 @@ addpath(toolbox_dir);
 
 % Select where to store results
 results_dir = fullfile(pwd,'stimtune_results');
-mkdir(results_dir);
+if ~exist(results_dir,'file')
+    mkdir(results_dir);
+end
 %% Evaluate a single condition design (vs baseline)
 
 % Specify factor structure

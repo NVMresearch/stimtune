@@ -87,7 +87,13 @@ for i = 1:ndesigns
     max_gap  = designs(i,:).max_gap; 
 
     % Make a matrix of trials for this design
-    all_trials = make_trial_matrix(duration,min_gap,max_gap,nconditions,settings);
+    [all_trials,t] = make_trial_matrix(duration,min_gap,max_gap,nconditions,settings);
+
+    % Skip if design was not feasible
+    if isempty(all_trials)
+        warning('Design was not feasible');
+        continue
+    end
 
     % Calculate required number of scans
     if strict
@@ -228,7 +234,7 @@ for i = 1:nconditions
 end
 
 % -------------------------------------------------------------------------
-function all_trials = make_trial_matrix(duration,min_gap,max_gap,nconditions,settings)
+function [all_trials,t] = make_trial_matrix(duration,min_gap,max_gap,nconditions,settings)
 % Generates a list of trials
 %
 % duration    - [1 x 1] duration of trials
@@ -239,6 +245,7 @@ function all_trials = make_trial_matrix(duration,min_gap,max_gap,nconditions,set
 % 
 % Returns:
 % all_trials - [ntrials x 3] with columns: condition, duration, ITI
+% t          - [1 x 1] total time for the entire matrix
 
 % Unpack settings
 maxtime = settings.maxtime;
