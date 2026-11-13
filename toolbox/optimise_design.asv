@@ -1,25 +1,25 @@
 function [T_factorial,T_designs,eff,opt,con] = optimise_design(settings)
 % Optimizes an experimental design for fMRI.
 %
-% An experimental design is specified by blocks of a certain duration and
-% jittered inter-trial intervals (ITIs), sampled from a uniform distribution
-% between min_gap_range and max_gap_range. This tool performs a grid search
-% to select the block length and range of ITIs that maximize the
-% efficiency for each contrast.
+% An experimental design is specified by blocks of a certain duration and 
+% jittered inter-trial intervals (ITIs), sampled from a uniform 
+% distribution between min_gap_range and max_gap_range. This tool performs 
+% a grid search to select the block length and range of ITIs that maximize 
+% the efficiency for each contrast.
 %
 % Returns:
 % T_factorial  - table with the optimal settings for each contrast
 % T_designs    - table with the max efficiency (over contrasts) for each 
-%               candidate design
-% eff          - raw efficiencies arranged in a matrix [designs x contrasts x repetitions]
+%                candidate design
+% eff          - raw efficiencies arranged in a matrix 
+%                [designs x contrasts x repetitions]
 % opt{c}       - metadata for the optimal design for each contrast c
 % con(c)       - definition of each contrast c
 % _________________________________________________________________________
 
 % Unpack inputs
 on_durations    = settings.durations_on;
-max_gap_range   = settings.max_gap_range;
-min_gap_range   = settings.min_gap_range;
+iti_dist        = settings.iti_dist;
 maxtime         = settings.maxtime;
 nrep            = settings.nrep;
 seed            = settings.seed;
@@ -30,22 +30,35 @@ strict          = settings.strict;
 
 rng(seed);
 
-% Generate table of designs to evaluate. A "design" consists of a duration,
-% min_gap and max_gap.
+% Generate table of designs to evaluate. A "design" consists of a duration
+% and parameters for the ITI distribution
 % -------------------------------------------------------------------------
-[duration,min_gap,max_gap] = ndgrid(on_durations,min_gap_range,max_gap_range);
 
-% Vectors -> table
-duration = duration(:);
-min_gap  = min_gap(:);
-max_gap  = max_gap(:);
-designs  = table(duration,min_gap,max_gap);
+% Build a cell array param_ranges{i} is the vector of candidate values for
+% parameter i
+param_ranges = [on_durations; iti_dist.param_ranges(:)];
+n_params     = length(param_ranges);
+n_iti_params = n_params-1;
 
-% Remove designs with max_gap > min_gap
-to_delete = designs.min_gap > designs.max_gap;
-designs(to_delete, :) = [];
+% Generate all permutations (requires MATLAB 2023a)
+% Each row is a design and each column a parameter (duration followed by
+% ITI distribution parameters)
+param_names = ['Duration', cellstr(compose("ITI_Param_%d",1:n_iti_params))];
+params = combinations(param_ranges{:});
+params.Properties.VariableNames = param_names;
+T_designs = table(params);
 
-ndesigns = size(designs,1);
+% Remove invalid designs
+% -------------------------------------------------------------------------
+to_delete = [];
+
+switch iti_dist.distribution
+    case 'uniform'
+        to_delete = T_designs.params.ITI_Param_1 > T_designs.params.ITI_Param_2;        
+end
+
+T_designs(to_delete, :) = [];
+ndesigns = size(T_designs,1);
 
 % Generate list of experimental conditions (cells in the factorial design)
 % -------------------------------------------------------------------------
@@ -74,19 +87,38 @@ eff = zeros(ndesigns, ncontrasts, nrep);
 max_eff = repmat(-999,1,ncontrasts);
 opt = cell(1,ncontrasts);
 
+% Uniform distribution bounded at a,b
+uniformrnd = @(a,b) a + (b - a) * rand(1,1);
+
 for i = 1:ndesigns
 
     if mod(i,10) == 0
         fprintf('Evaluating design %d of %d\n',i,ndesigns);
     end
 
-    % Get design parameters
-    duration = designs(i,:).duration;
-    min_gap  = designs(i,:).min_gap;
-    max_gap  = designs(i,:).max_gap; 
+    % Get vector of design parameters
+    params = T_designs{i,'params'};
+    duration = params(1);
 
     % Make a matrix of trials for this design
-    all_trials = make_trial_matrix(duration,min_gap,max_gap,nconditions,settings);
+    %[all_trials,t] = make_trial_matrix(params,iti_dist,nconditions,settings);
+
+    % Function for sampling a single ITI    
+    switch iti_dist.distribution
+        case 'uniform'
+            iti_sampler = @()uniformrnd(params(2),params(3));
+        otherwise
+            error('Unknown distribution');
+    end
+    
+    % Make a table of trials
+    [all_trials,t] = make_schedule(duration, nconditions, iti_sampler, maxtime);
+
+    % Skip if design was not feasible
+    if isempty(all_trials)
+        warning('Design was not feasible');
+        continue
+    end
 
     % Calculate required number of scans
     if strict
@@ -124,10 +156,8 @@ for i = 1:ndesigns
 
                 % Details of the design
                 design = struct();
-                design.duration = duration;
-                design.min_gap  = min_gap;
-                design.max_gap  = max_gap; 
-                design.eff      = eff(i,c,rep);
+                design.params = params;
+                design.eff    = eff(i,c,rep);
                 
                 % Details of the specific best repetition of this design
                 meta = struct();
@@ -150,11 +180,11 @@ fprintf('Evaluated %d designs\n',ndesigns);
 % Build a table with the optimal design parameters for each contrast
 % -------------------------------------------------------------------------
 contrast      = {con.name}';
-stim_duration = cellfun(@(x)x.design.duration,opt)';
-min_gap       = cellfun(@(x)x.design.min_gap,opt)';
-max_gap       = cellfun(@(x)x.design.max_gap,opt)';
+params        = cell2mat(cellfun(@(x)x.design.params,opt,'UniformOutput',false)');
+params        = array2table(params,'VariableNames',param_names);
 efficiency    = cellfun(@(x)x.design.eff,opt)';
-T_factorial  = table(contrast, stim_duration, min_gap, max_gap, efficiency);
+
+T_factorial = table(contrast, params, efficiency);
 
 % Build a table with all individual repetitions of designs that were
 % assessed, sorted by total efficiency across contrasts
@@ -164,20 +194,23 @@ T_factorial  = table(contrast, stim_duration, min_gap, max_gap, efficiency);
 % max over the third dimension (repetitions)
 eff_max = max(eff, [], 3);
 
-% Create output table
-T_designs = designs;
+% temporary table for efficiencies
+T_eff = table();
 
 % Add columns with the max efficiency of each contrast
 for i = 1:ncontrasts
     fieldname = sprintf('eff_%s',contrast{i});
-    T_designs.(fieldname) = eff_max(:,i);
+    T_eff.(fieldname) = eff_max(:,i);
 end
 
 % Total efficiency over contrasts for each design
 eff_total = sum(eff_max,2);
-T_designs.eff_total = eff_total;
+T_eff.eff_total = eff_total;
 
-% Now sort designs by eff_total
+% Append to T_designs table
+T_designs.eff = T_eff;
+
+% Sort designs by eff_total
 [~, sortOrder] = sort(eff_total, 'descend');
 T_designs = T_designs(sortOrder,:);
 
@@ -227,71 +260,15 @@ for i = 1:nconditions
 end
 
 % -------------------------------------------------------------------------
-function all_trials = make_trial_matrix(duration,min_gap,max_gap,nconditions,settings)
-% Generates a list of trials
-%
-% duration    - [1 x 1] duration of trials
-% min_gap     - [1 x 1] minimum gap between trials
-% max_gap     - [1 x 1] maximum gap between trials
-% nconditions - [1 x 1] number of cells in the factorial design
-% settings    - (array) settings
-% 
-% Returns:
-% all_trials - [ntrials x 3] with columns: condition, duration, ITI
-
-% Unpack settings
-maxtime = settings.maxtime;
-strict  = settings.strict;
-
-% Select ITIs to use
-nitis = 6;
-itis  = linspace(min_gap,max_gap, nitis);
-
-% Prepare trials
-t = 0;        
-iti_idx = 1;
-all_trials = [];    
-while t < maxtime                
-    % Make a table with one trial of each condition. Each row
-    % contains: [condition number, duration, ITI]
-    cond   = (1:nconditions)';
-    dur    = repmat(duration,nconditions,1);
-    iti    = repmat(itis(iti_idx),nconditions,1);            
-    trials = [cond, dur, iti];
-
-    % Advance the choice of ITI for the next batch of trials
-    if iti_idx == nitis
-        iti_idx = 1;
-    else
-        iti_idx = iti_idx + 1;
-    end            
-
-    % Total time for these trials
-    dt = sum(dur + iti);
-
-    % If logging these trials will exceed our max time, abort
-    if strict && ((t + dt) > maxtime)
-        break
-    end
-
-    % Log the trials       
-    all_trials = [all_trials; trials];
-
-    % Calculate total time
-    t = t + dt;
-end
-
-
-% -------------------------------------------------------------------------
 function [onsets,durations] = generate_spm_onsets(trials)
 % Converts from the trials matrix format used here: 
 % [condition, duration, iti] to standard SPM format for onsets and
 % durations
 
 % Unpack
-cond = trials(:,1);
-dur  = trials(:,2);
-iti  = trials(:,3);
+cond = trials.Condition;
+dur  = trials.Duration;
+iti  = trials.ITI;
 
 nconditions = max(cond);
 ntrials     = size(trials,1);

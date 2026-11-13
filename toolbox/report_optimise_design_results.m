@@ -1,7 +1,7 @@
 function report_optimise_design_results(T_factorial,T_designs,eff,opt,con)
 
-min_gap_range = opt{1}.settings.min_gap_range;
-max_gap_range = opt{1}.settings.max_gap_range;
+iti_param1_range = opt{1}.settings.iti_dist.param_ranges{1};
+iti_param2_range = opt{1}.settings.iti_dist.param_ranges{2};
 
 % Display table of optimal designs
 % -------------------------------------------------------------------------
@@ -10,7 +10,7 @@ disp(T_factorial);
 % Plot efficiencies across landscape of jitters for the optimal duration
 % -------------------------------------------------------------------------
 
-% Maximum efficiencies over repetitions [design x contrast]
+% Maximum efficiencies per contrast over repetitions [design x contrast]
 eff_max = max(eff,[],3);
 
 % Create figure
@@ -23,34 +23,34 @@ for i = 1:ncols
     subplot(nrows,ncols,i);
 
     % Get the optimal stimulus duration
-    opt_duration = T_factorial{i,"stim_duration"};
+    opt_duration = T_factorial{i,"params"}.Duration;
 
     % Output variable
-    efficiency_matrix = zeros(length(min_gap_range), length(max_gap_range));
+    efficiency_matrix = zeros(length(iti_param1_range), length(iti_param2_range));
 
     % Find all designs with the optimal duration
-    relevant_design_idx = find(T_designs.duration==opt_duration);
+    relevant_design_idx = find(T_designs.params.Duration==opt_duration);
 
     % Loop over relevant designs
     for j = 1:size(relevant_design_idx,1)
-        % Get this design's gap range
-        min_gap = T_designs{relevant_design_idx(j),'min_gap'};
-        max_gap = T_designs{relevant_design_idx(j),'max_gap'};
+        % Get this design's ITI parameter range
+        iti_param1 = T_designs.params.ITI_Param_1(relevant_design_idx(j));
+        iti_param2 = T_designs.params.ITI_Param_2(relevant_design_idx(j));
 
         % Get this design's max efficiency over repetitions
         efficiency = eff_max(relevant_design_idx(j),i);
 
         % Place in matrix
-        min_gap_idx = find(min_gap_range == min_gap);
-        max_gap_idx = find(max_gap_range == max_gap);
-        efficiency_matrix(min_gap_idx,max_gap_idx) = efficiency;
+        param1_idx = find(iti_param1_range == iti_param1);
+        param2_idx = find(iti_param2_range == iti_param2);
+        efficiency_matrix(param1_idx,param2_idx) = efficiency;
     end
 
     % Plot efficiency_matrix
-    imagesc(max_gap_range, min_gap_range, efficiency_matrix);
+    imagesc(iti_param2_range, iti_param1_range, efficiency_matrix);
     set(gca, 'YDir', 'normal');
-    xticks(max_gap_range);
-    yticks(min_gap_range);
+    xticks(iti_param2_range);
+    yticks(iti_param1_range);
     
     % Decorate
     colorbar
@@ -59,14 +59,14 @@ for i = 1:ncols
     str = sprintf('Efficiency of %s\n For optimal stim duration: %2.2fs',...
         con(i).name, opt_duration);
     title(str);
-    xlabel('Max jitter (s)');
-    ylabel('Min jitter (s)');
+    xlabel('ITI parameter 2');
+    ylabel('ITI parameter 1');
 
     % Identify row and column index of maximum value in efficiency_matrix
     [maxEfficiency, linearIdx] = max(efficiency_matrix(:));
     [maxRowIdx, maxColIdx] = ind2sub(size(efficiency_matrix), linearIdx);
     hold on;
-    plot(max_gap_range(maxColIdx), min_gap_range(maxRowIdx), 'r*', ...
+    plot(iti_param2_range(maxColIdx), iti_param1_range(maxRowIdx), 'r*', ...
         'MarkerSize', 10, 'LineWidth', 1.5);
     hold off;
 
@@ -86,23 +86,23 @@ for i = 1:ncols
     ax(i)=subplot(nrows,ncols,i);
 
     % Get the optimal ITI durations
-    opt_min_gap = T_factorial{i,"min_gap"};
-    opt_max_gap = T_factorial{i,"max_gap"};
+    opt_iti_param_1 = T_factorial.params.ITI_Param_1(i);
+    opt_iti_param_2 = T_factorial.params.ITI_Param_2(i);
 
     % Find all designs with the optimal durations
-    relevant_design_idx = find(T_designs.min_gap==opt_min_gap & ...
-        T_designs.max_gap==opt_max_gap);
+    relevant_design_idx = find(T_designs.params.ITI_Param_1==opt_iti_param_1 & ...
+        T_designs.params.ITI_Param_2==opt_iti_param_2);
 
     % Extract efficiencies across stimulus durations
     efficiency = eff_max(relevant_design_idx,i);
-    durations  = T_designs.duration(relevant_design_idx);
+    durations  = T_designs.params.Duration(relevant_design_idx);
 
     % Plot efficiency by duration
     plot(durations, efficiency, '.','MarkerSize',20);
     xlabel('Stimulus duration (s)');
     ylabel('Maximum efficiency');
-    str = sprintf('Efficiency of %s\nFor optimal gap range [%2.2fs-%2.2fs]',...
-        con(i).name, opt_min_gap, opt_max_gap);    
+    str = sprintf('Efficiency of %s\nFor optimal ITI params [%2.2fs-%2.2fs]',...
+        con(i).name, opt_iti_param_1, opt_iti_param_2);    
     title(str);
     grid on;
     axis square

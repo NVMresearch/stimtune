@@ -9,11 +9,13 @@ design.nrep          = 20;    % number of random trial orders per design
 design.seed          = 1;     % seed for random number generator
 design.nbf           = 1;     % number of haemodynamic basis functions
 design.maxtime       = 10*60; % 10 mins in seconds
-design.durations_on  = on_durations;
-design.max_gap_range = max_gap_range;
-design.min_gap_range = min_gap_range;
 design.TR            = 3.22; % volume repetition time in seconds
-design.strict        = true; % whether to be strict about the time limit
+design.durations_on  = on_durations;
+
+% Sampling distribution for ITIs
+design.iti_dist.distribution    = 'uniform';
+design.iti_dist.param_ranges{1} = min_gap_range;
+design.iti_dist.param_ranges{2} = max_gap_range;
 
 % Add the StimTune toolbox to the MATLAB path
 toolbox_dir = fullfile(pwd,'../toolbox');
