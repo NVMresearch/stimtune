@@ -219,8 +219,9 @@ for c = 1:length(con)
     all_names       = cell(nrep,1);
     all_onsets      = cell(nrep,1);
     all_durations   = cell(nrep,1);
+    all_itis        = cell(nrep,1);
     all_efficiency  = zeros(nrep,1);    
-
+    
     for rep = 1:nrep
 
         % Make a table of trials
@@ -250,10 +251,11 @@ for c = 1:length(con)
         % Store names, onsets & durations
         all_names{rep}       = names;
         all_onsets{rep}      = onsets;
-        all_durations{rep}   = durations;       
+        all_durations{rep}   = durations;  
+        all_itis{rep}        = trials_rnd.ITI;
     end
-    onset_tables{c} = table(repetition,all_names,all_onsets,all_durations,all_efficiency,...
-        'VariableNames',{'Repetition','names','onsets','durations','efficiency'});
+    onset_tables{c} = table(repetition,all_names,all_onsets,all_durations,all_itis,all_efficiency,...
+        'VariableNames',{'Repetition','names','onsets','durations','ITIs','efficiency'});
 end
 
 % Sort repetitions by efficiency
