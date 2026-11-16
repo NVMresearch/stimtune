@@ -1,4 +1,4 @@
-function [T_factorial,T_designs,eff,opt,con] = optimise_design(settings)
+function [T_factorial,T_designs,onset_tables,eff,opt,con] = optimise_design(settings)
 % Optimizes an experimental design for fMRI.
 %
 % An experimental design is specified by blocks of a certain duration and 
@@ -11,6 +11,7 @@ function [T_factorial,T_designs,eff,opt,con] = optimise_design(settings)
 % T_factorial  - table with the optimal settings for each contrast
 % T_designs    - table with the max efficiency (over contrasts) for each 
 %                candidate design
+% onset_tables - tables with names, onsets, durations
 % eff          - raw efficiencies arranged in a matrix 
 %                [designs x contrasts x repetitions]
 % opt{c}       - metadata for the optimal design for each contrast c
@@ -86,9 +87,6 @@ eff = zeros(ndesigns, ncontrasts, nrep);
 max_eff = repmat(-999,1,ncontrasts);
 opt = cell(1,ncontrasts);
 
-% Uniform distribution bounded at a,b
-uniformrnd = @(a,b) a + (b - a) * rand(1,1);
-
 for i = 1:ndesigns
 
     if mod(i,10) == 0
@@ -98,33 +96,20 @@ for i = 1:ndesigns
     % Get design parameters
     params = T_designs{i,'params'};
     duration = params.Duration;
-
-    % Make a matrix of trials for this design
-    %[all_trials,t] = make_trial_matrix(params,iti_dist,nconditions,settings);
-
-    % Function for sampling a single ITI    
-    switch iti_dist.distribution
-        case 'uniform'
-            iti_sampler = @()uniformrnd(params.ITI_Param_1,params.ITI_Param_2);
-        otherwise
-            error('Unknown distribution');
-    end
-    
-    % Make a table of trials
-    all_trials = make_schedule(duration, nconditions, iti_sampler, maxtime);
-
-    % Skip if design was not feasible
-    if isempty(all_trials)
-        warning('Design was not feasible');
-        continue
-    end
-
-    % Calculate required number of scans
-    nscans = ceil(maxtime / TR);
+    iti_sampler = get_iti_distribution(iti_dist.distribution, params);
     
     % Repeatedly randomize trial order and assess efficiency
     for rep = 1:nrep
-        
+
+        % Make a table of trials
+        all_trials = make_schedule(duration, nconditions, iti_sampler, maxtime);
+
+        % Skip if design was not feasible
+        if isempty(all_trials)
+            warning('Design was not feasible');
+            continue
+        end
+
         % Randomize the trial order [condition, duration, ITI]
         ntrials    = size(all_trials,1);
         idx_rnd    = randperm(ntrials);
@@ -132,6 +117,9 @@ for i = 1:ndesigns
 
         % Get onsets and durations in SPM format
         [onsets,durations] = generate_spm_onsets(trials_rnd);
+
+        % Calculate required number of scans
+        nscans = ceil(maxtime / TR);
 
         % Generate design matrix
         pmod = [];
@@ -210,6 +198,87 @@ T_designs = T_designs(sortOrder,:);
 
 % Sort raw eff matrix by the same
 eff = eff(sortOrder,:,:);
+
+% Generate and return a set of repetitions of the best design per
+% contrast. We don't store these for every design (above) to save memory
+% -------------------------------------------------------------------------
+onset_tables = cell(1,length(con));
+
+repetition = (1:nrep)';
+
+for c = 1:length(con)
+    % Get the parameters of the winning design
+    params      = opt{c}.design.params;
+    duration    = params.Duration;
+    iti_sampler = get_iti_distribution(iti_dist.distribution, params);
+
+    % Get contrast vector or matrix
+    cvec = con(c).c';
+
+    % Output variables
+    all_names       = cell(nrep,1);
+    all_onsets      = cell(nrep,1);
+    all_durations   = cell(nrep,1);
+    all_efficiency  = zeros(nrep,1);    
+
+    for rep = 1:nrep
+
+        % Make a table of trials
+        all_trials = make_schedule(duration, nconditions, iti_sampler, maxtime);
+
+        % Skip if design was not feasible
+        if isempty(all_trials)
+            warning('Design was not feasible');
+            continue
+        end
+
+        % Randomize the trial order [condition, duration, ITI]
+        ntrials    = size(all_trials,1);
+        idx_rnd    = randperm(ntrials);
+        trials_rnd = all_trials(idx_rnd,:);
+
+        % Get onsets and durations in SPM format
+        [onsets,durations] = generate_spm_onsets(trials_rnd);
+
+        % Generate design matrix
+        pmod = [];
+        [X,Xf,Xnames,U] = generate_spm(names, onsets, durations, pmod, nscans, TR, nbf);
+
+        % Evaluate efficiency
+        all_efficiency(rep)  = compute_glm_efficiency(X,cvec);
+        
+        % Store names, onsets & durations
+        all_names{rep}       = names;
+        all_onsets{rep}      = onsets;
+        all_durations{rep}   = durations;       
+    end
+    onset_tables{c} = table(repetition,all_names,all_onsets,all_durations,all_efficiency,...
+        'VariableNames',{'Repetition','names','onsets','durations','efficiency'});
+end
+
+% Sort repetitions by efficiency
+for c = 1:numel(onset_tables)
+    onset_tables{c} = sortrows(onset_tables{c}, 'efficiency', 'descend');
+end
+
+% -------------------------------------------------------------------------
+function iti_sampler = get_iti_distribution(distribution, params)
+% Returns a handle to a function for sampling a single ITI
+% distribution - name of the distribution
+% params       - array of parameters
+
+switch distribution
+    case 'uniform'
+        % Uniform distribution bounded at a,b
+        uniformrnd  = @(a,b) a + (b - a) * rand(1,1);
+        iti_sampler = @()uniformrnd(params.ITI_Param_1,params.ITI_Param_2);
+    case 'gamma'
+        % Gamma random distribution with shape and scale parameters a,b
+        gammrnd     = @(a,b) spm_gamrnd(a,b);
+        iti_sampler = @()gammrnd(params.ITI_Param_1,params.ITI_Param_2);            
+    otherwise
+        error('Unknown distribution');
+end
 
 % -------------------------------------------------------------------------
 function [names,nlevels] = gen_experimental_conditions(factors)

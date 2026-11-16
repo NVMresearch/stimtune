@@ -101,7 +101,7 @@ for i = 1:ncols
     plot(durations, efficiency, '.','MarkerSize',20);
     xlabel('Stimulus duration (s)');
     ylabel('Maximum efficiency');
-    str = sprintf('Efficiency of %s\nFor optimal ITI params [%2.2fs-%2.2fs]',...
+    str = sprintf('Efficiency of %s\nFor optimal ITI params [%2.2f, %2.2f]',...
         con(i).name, opt_iti_param_1, opt_iti_param_2);    
     title(str);
     grid on;
