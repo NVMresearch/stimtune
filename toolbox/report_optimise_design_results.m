@@ -51,6 +51,14 @@ for i = 1:ncols
     set(gca, 'YDir', 'normal');
     xticks(iti_param2_range);
     yticks(iti_param1_range);
+
+    % Make sure the ticks aren't too close together
+    if numel(iti_param2_range) > 8
+        xticks(iti_param2_range(1:2:end));
+    end
+    if numel(iti_param1_range) > 8
+        yticks(iti_param1_range(1:2:end));
+    end
     
     % Decorate
     colorbar
@@ -59,8 +67,8 @@ for i = 1:ncols
     str = sprintf('Efficiency of %s\n For optimal stim duration: %2.2fs',...
         con(i).name, opt_duration);
     title(str);
-    xlabel('ITI parameter 2');
-    ylabel('ITI parameter 1');
+    xlabel('ITI parameter 2','FontSize',12);
+    ylabel('ITI parameter 1','FontSize',12);
 
     % Identify row and column index of maximum value in efficiency_matrix
     [maxEfficiency, linearIdx] = max(efficiency_matrix(:));
@@ -128,5 +136,11 @@ for i = 1:ncols
     title(str);
 
     xlabel('Scan time (seconds)');
+    set(gca,'FontSize',12);
     axis square
+
+    xlim([0 max(t)]);
+
+    % Turn off y-axis
+    yticks([]);
 end
