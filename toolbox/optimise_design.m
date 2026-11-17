@@ -276,8 +276,14 @@ switch distribution
         iti_sampler = @()uniformrnd(params.ITI_Param_1,params.ITI_Param_2);
     case 'gamma'
         % Gamma random distribution with shape and scale parameters a,b
+        % lower bounded by minval
+        try
+            minval = params.ITI_Param_3;
+        catch
+            minval = 0;
+        end
         gammrnd     = @(a,b) spm_gamrnd(a,b);
-        iti_sampler = @()gammrnd(params.ITI_Param_1,params.ITI_Param_2);            
+        iti_sampler = @() minval + gammrnd(params.ITI_Param_1,params.ITI_Param_2); 
     otherwise
         error('Unknown distribution');
 end
